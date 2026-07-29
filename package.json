@@ -1,0 +1,40 @@
+{
+  "name": "@esms/sms",
+  "version": "1.0.0",
+  "description": "Official Node.js / TypeScript SDK for the eSMS Africa SMS API",
+  "keywords": ["esms", "sms", "africa", "bulk sms", "otp", "messaging"],
+  "homepage": "https://esmsafrica.io",
+  "bugs": "mailto:support@esmsafrica.io",
+  "license": "MIT",
+  "author": "eSMS Africa <support@esmsafrica.io>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eSMS-Africa/esms-sdk-node.git"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}
