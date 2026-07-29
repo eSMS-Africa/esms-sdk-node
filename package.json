@@ -1,5 +1,5 @@
 {
-  "name": "@esms/sms",
+  "name": "esms-sms",
   "version": "1.0.0",
   "description": "Official Node.js / TypeScript SDK for the eSMS Africa SMS API",
   "keywords": ["esms", "sms", "africa", "bulk sms", "otp", "messaging"],

@@ -1,4 +1,4 @@
-# @esms/sms
+# esms-sms
 
 Official Node.js / TypeScript SDK for the [eSMS Africa](https://esmsafrica.io) SMS API.
 
@@ -7,7 +7,7 @@ Send SMS across 14+ African countries, track delivery, schedule messages, and ch
 ## Install
 
 ```bash
-npm install @esms/sms
+npm install esms-sms
 ```
 
 Requires Node.js 18+ (uses the built-in `fetch`).
@@ -15,7 +15,7 @@ Requires Node.js 18+ (uses the built-in `fetch`).
 ## Quick start
 
 ```ts
-import { Esms } from "@esms/sms";
+import { Esms } from "esms-sms";
 
 const esms = new Esms({ apiKey: process.env.ESMS_API_KEY! });
 
@@ -83,7 +83,7 @@ import {
   AuthenticationError,
   InvalidRequestError,
   EsmsError,
-} from "@esms/sms";
+} from "esms-sms";
 
 try {
   await esms.messages.send({ to: "+256700000000", text: "Hi" });
