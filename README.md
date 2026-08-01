@@ -2,7 +2,7 @@
 
 Official Node.js / TypeScript SDK for the [eSMS Africa](https://esmsafrica.io) SMS API.
 
-Send SMS across 14+ African countries, track delivery, schedule messages, and check your balance — with full TypeScript types and no runtime dependencies.
+Send SMS across 14+ African countries, track delivery, schedule messages, and check your balance - with full TypeScript types and no runtime dependencies.
 
 ## Install
 
@@ -22,7 +22,7 @@ const esms = new Esms({ apiKey: process.env.ESMS_API_KEY! });
 const res = await esms.messages.send({
   to: "+256700000000",
   text: "Your verification code is 123456",
-  senderId: "eSMSAfrica", // optional — falls back to the route default
+  senderId: "eSMSAfrica", // optional - falls back to the route default
 });
 
 console.log(res.id, res.status); // "…", "submitted"
@@ -100,13 +100,13 @@ try {
 
 | Class | When |
 |-------|------|
-| `AuthenticationError` | 401 — key missing or invalid |
-| `PermissionError` | 403 — not allowed |
-| `NotFoundError` | 404 — no such message |
-| `InvalidRequestError` | 400 / 422 — bad request |
-| `InsufficientBalanceError` | 422 — not enough credit (`.balance`, `.cost`, `.currency`) |
-| `RateLimitError` | 429 — slow down |
-| `ApiError` | 5xx — server error |
+| `AuthenticationError` | 401 - key missing or invalid |
+| `PermissionError` | 403 - not allowed |
+| `NotFoundError` | 404 - no such message |
+| `InvalidRequestError` | 400 / 422 - bad request |
+| `InsufficientBalanceError` | 422 - not enough credit (`.balance`, `.cost`, `.currency`) |
+| `RateLimitError` | 429 - slow down |
+| `ApiError` | 5xx - server error |
 | `EsmsConnectionError` | network failure or timeout |
 
 ## Configuration

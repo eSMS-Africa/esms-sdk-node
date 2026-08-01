@@ -39,20 +39,20 @@ export class EsmsError extends Error {
 /** The request never reached the API (DNS, TLS, timeout, offline). */
 export class EsmsConnectionError extends EsmsError {}
 
-/** 401 — the API key or token is missing or invalid. */
+/** 401 - the API key or token is missing or invalid. */
 export class AuthenticationError extends EsmsError {}
 
-/** 403 — authenticated, but not allowed to perform this action. */
+/** 403 - authenticated, but not allowed to perform this action. */
 export class PermissionError extends EsmsError {}
 
-/** 404 — the requested resource does not exist. */
+/** 404 - the requested resource does not exist. */
 export class NotFoundError extends EsmsError {}
 
-/** 400 / 422 — the request was rejected as invalid. */
+/** 400 / 422 - the request was rejected as invalid. */
 export class InvalidRequestError extends EsmsError {}
 
 /**
- * 422 `insufficient_balance` — the account does not have enough credit to
+ * 422 `insufficient_balance` - the account does not have enough credit to
  * send. Exposes the shortfall so callers can prompt a top-up.
  */
 export class InsufficientBalanceError extends InvalidRequestError {
@@ -69,10 +69,10 @@ export class InsufficientBalanceError extends InvalidRequestError {
   }
 }
 
-/** 429 — too many requests; back off and retry later. */
+/** 429 - too many requests; back off and retry later. */
 export class RateLimitError extends EsmsError {}
 
-/** 5xx — the API had an internal error. */
+/** 5xx - the API had an internal error. */
 export class ApiError extends EsmsError {}
 
 /**

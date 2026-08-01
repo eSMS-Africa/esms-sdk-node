@@ -29,7 +29,7 @@ export interface SendParams {
 }
 
 export interface SendResult {
-  /** Message ID — use it with {@link MessagesResource.get}. */
+  /** Message ID - use it with {@link MessagesResource.get}. */
   id: string;
   status: MessageStatus;
   segments: number;
