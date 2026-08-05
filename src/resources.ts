@@ -150,6 +150,73 @@ export class RoutesResource {
   }
 }
 
+/** Managed OTP verification — we generate, send, and check the code. */
+export class VerifyResource {
+  constructor(private readonly http: HttpClient) {}
+
+  /** Send a verification code to a phone number. */
+  async start(params: {
+    to: string;
+    senderId?: string;
+    codeLength?: number;
+    expirySeconds?: number;
+    template?: string;
+  }): Promise<Record<string, unknown>> {
+    return this.http.request<Record<string, unknown>>({
+      method: "POST",
+      path: "/verify/start",
+      body: prune({
+        to: params.to,
+        sender_id: params.senderId,
+        code_length: params.codeLength,
+        expiry_seconds: params.expirySeconds,
+        template: params.template,
+      }),
+    });
+  }
+
+  /** Check a code the user entered. Returns `{ status: "approved" | "pending" | ... }`. */
+  async check(params: {
+    code: string;
+    verificationId?: string;
+    to?: string;
+  }): Promise<Record<string, unknown>> {
+    return this.http.request<Record<string, unknown>>({
+      method: "POST",
+      path: "/verify/check",
+      body: prune({
+        code: params.code,
+        verification_id: params.verificationId,
+        to: params.to,
+      }),
+    });
+  }
+}
+
+/** Manage the opt-out (STOP / DND) list. */
+export class OptOutsResource {
+  constructor(private readonly http: HttpClient) {}
+
+  /** List numbers that have opted out of your messages. */
+  async list(): Promise<Record<string, unknown>[]> {
+    const raw = await this.http.request<Record<string, unknown>>({ method: "GET", path: "/opt-outs" });
+    return (raw?.opt_outs as Record<string, unknown>[]) ?? [];
+  }
+
+  /** Manually add a number to your opt-out list. */
+  async add(phone: string): Promise<Record<string, unknown>> {
+    return this.http.request<Record<string, unknown>>({ method: "POST", path: "/opt-outs", body: { phone } });
+  }
+
+  /** Remove a number from your opt-out list. */
+  async remove(phone: string): Promise<Record<string, unknown>> {
+    return this.http.request<Record<string, unknown>>({
+      method: "DELETE",
+      path: `/opt-outs/${encodeURIComponent(phone)}`,
+    });
+  }
+}
+
 // ── mapping helpers (snake_case API → camelCase SDK) ──────────────
 
 function prune<T extends Record<string, unknown>>(obj: T): Partial<T> {
