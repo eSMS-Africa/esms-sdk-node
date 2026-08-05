@@ -57,7 +57,7 @@ export class Esms {
   /**
    * Verify an incoming webhook's HMAC-SHA256 signature (constant-time).
    *
-   * @param rawBody   The exact raw request body (string or Buffer) — not re-serialized JSON.
+   * @param rawBody   The exact raw request body (string or Buffer) - not re-serialized JSON.
    * @param signature The `X-Webhook-Signature` header value (e.g. `sha256=…`).
    * @param secret    Your webhook signing secret.
    *

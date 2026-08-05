@@ -150,7 +150,7 @@ export class RoutesResource {
   }
 }
 
-/** Managed OTP verification — we generate, send, and check the code. */
+/** Managed OTP verification - we generate, send, and check the code. */
 export class VerifyResource {
   constructor(private readonly http: HttpClient) {}
 
