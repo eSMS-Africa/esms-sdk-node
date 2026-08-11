@@ -104,7 +104,7 @@ try {
 | `PermissionError` | 403 - not allowed |
 | `NotFoundError` | 404 - no such message |
 | `InvalidRequestError` | 400 / 422 - bad request |
-| `InsufficientBalanceError` | 422 - not enough credit (`.balance`, `.cost`, `.currency`) |
+| `InsufficientBalanceError` | 402 - not enough credit (`.balance`, `.cost`, `.currency`) |
 | `RateLimitError` | 429 - slow down |
 | `ApiError` | 5xx - server error |
 | `EsmsConnectionError` | network failure or timeout |
