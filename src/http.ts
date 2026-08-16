@@ -23,6 +23,7 @@ interface RequestOptions {
   method: string;
   path: string;
   query?: Record<string, string | number | undefined>;
+  headers?: Record<string, string>;
   body?: unknown;
 }
 
@@ -69,6 +70,7 @@ export class HttpClient {
       Authorization: `Bearer ${this.apiKey}`,
       Accept: "application/json",
       "User-Agent": `esms-node/${VERSION}`,
+      ...(opts.headers ?? {}),
     };
     let payload: string | undefined;
     if (opts.body !== undefined) {

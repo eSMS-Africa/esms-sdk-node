@@ -154,19 +154,23 @@ export class RoutesResource {
 export class VerifyResource {
   constructor(private readonly http: HttpClient) {}
 
-  /** Send a verification code to a phone number. */
+  /** Send a verification code. Pass `appId` to use a Verify App; `idempotencyKey` makes retries safe. */
   async start(params: {
     to: string;
+    appId?: string;
     senderId?: string;
     codeLength?: number;
     expirySeconds?: number;
     template?: string;
+    idempotencyKey?: string;
   }): Promise<Record<string, unknown>> {
     return this.http.request<Record<string, unknown>>({
       method: "POST",
       path: "/verify/start",
+      headers: params.idempotencyKey ? { "Idempotency-Key": params.idempotencyKey } : undefined,
       body: prune({
         to: params.to,
+        app_id: params.appId,
         sender_id: params.senderId,
         code_length: params.codeLength,
         expiry_seconds: params.expirySeconds,
@@ -184,12 +188,58 @@ export class VerifyResource {
     return this.http.request<Record<string, unknown>>({
       method: "POST",
       path: "/verify/check",
-      body: prune({
-        code: params.code,
-        verification_id: params.verificationId,
-        to: params.to,
-      }),
+      body: prune({ code: params.code, verification_id: params.verificationId, to: params.to }),
     });
+  }
+
+  /** Fetch a verification's status without consuming an attempt. */
+  async get(verificationId: string): Promise<Record<string, unknown>> {
+    return this.http.request({ method: "GET", path: `/verify/${verificationId}` });
+  }
+
+  /** Send a fresh code for the same verification. */
+  async resend(verificationId: string): Promise<Record<string, unknown>> {
+    return this.http.request({ method: "POST", path: `/verify/${verificationId}/resend` });
+  }
+
+  /** Void an in-flight verification. */
+  async cancel(verificationId: string): Promise<Record<string, unknown>> {
+    return this.http.request({ method: "POST", path: `/verify/${verificationId}/cancel` });
+  }
+
+  /** List your verifications (most recent first). */
+  async list(params: { status?: string; appId?: string; to?: string; page?: number; limit?: number } = {}): Promise<Record<string, unknown>> {
+    const q = new URLSearchParams();
+    const map: Record<string, unknown> = { status: params.status, app_id: params.appId, to: params.to, page: params.page, limit: params.limit };
+    for (const [k, v] of Object.entries(map)) if (v !== undefined) q.set(k, String(v));
+    const qs = q.toString();
+    return this.http.request({ method: "GET", path: `/verify${qs ? `?${qs}` : ""}` });
+  }
+
+  // ---- Verify Apps ----
+  /** List your Verify Apps. */
+  async listApps(): Promise<Record<string, unknown>> {
+    return this.http.request({ method: "GET", path: "/verify/apps" });
+  }
+  /** Create a Verify App. */
+  async createApp(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.http.request({ method: "POST", path: "/verify/apps", body: prune(body) });
+  }
+  /** Fetch one Verify App. */
+  async getApp(id: string): Promise<Record<string, unknown>> {
+    return this.http.request({ method: "GET", path: `/verify/apps/${id}` });
+  }
+  /** Update a Verify App (full replace - send all fields; name is required). */
+  async updateApp(id: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.http.request({ method: "PATCH", path: `/verify/apps/${id}`, body: prune(body) });
+  }
+  /** Delete a Verify App. */
+  async deleteApp(id: string): Promise<Record<string, unknown>> {
+    return this.http.request({ method: "DELETE", path: `/verify/apps/${id}` });
+  }
+  /** Per-app verification stats. */
+  async appStats(id: string, days = 30): Promise<Record<string, unknown>> {
+    return this.http.request({ method: "GET", path: `/verify/apps/${id}/stats?days=${days}` });
   }
 }
 
