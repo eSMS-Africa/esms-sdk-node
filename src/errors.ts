@@ -48,11 +48,11 @@ export class PermissionError extends EsmsError {}
 /** 404 - the requested resource does not exist. */
 export class NotFoundError extends EsmsError {}
 
-/** 400 / 422 - the request was rejected as invalid. */
+/** 400 / 409 / 413 / 422 - the request was rejected as invalid. */
 export class InvalidRequestError extends EsmsError {}
 
 /**
- * 422 `insufficient_balance` - the account does not have enough credit to
+ * 402 `insufficient_balance` - the account does not have enough credit to
  * send. Exposes the shortfall so callers can prompt a top-up.
  */
 export class InsufficientBalanceError extends InvalidRequestError {
@@ -63,8 +63,10 @@ export class InsufficientBalanceError extends InvalidRequestError {
   constructor(message: string, opts: EsmsErrorOptions = {}) {
     super(message, opts);
     const d = (opts.detail ?? {}) as Record<string, unknown>;
-    this.balance = typeof d.balance === "number" ? d.balance : undefined;
-    this.cost = typeof d.cost === "number" ? d.cost : undefined;
+    const num = (...vals: unknown[]) => vals.find((v) => typeof v === "number") as number | undefined;
+    // Some paths report `available`/`required` instead of `balance`/`cost`.
+    this.balance = num(d.balance, d.available);
+    this.cost = num(d.cost, d.required);
     this.currency = typeof d.currency === "string" ? d.currency : undefined;
   }
 }
@@ -84,34 +86,23 @@ export function errorFromResponse(
   body: unknown,
   requestId?: string,
 ): EsmsError {
-  // FastAPI returns { detail: <string | object> }.
-  let detail: unknown = body;
-  if (body && typeof body === "object" && "detail" in body) {
-    detail = (body as { detail: unknown }).detail;
-  }
-
-  let code: string | undefined;
-  let message: string | undefined;
-  if (detail && typeof detail === "object") {
-    const d = detail as Record<string, unknown>;
-    if (typeof d.code === "string") code = d.code;
-    if (typeof d.message === "string") message = d.message;
-  } else if (typeof detail === "string") {
-    message = detail;
-  }
-  message ||= `HTTP ${status}`;
-
-  const opts: EsmsErrorOptions = { status, code, detail, requestId };
+  const { code, message, detail, requestId: bodyRequestId } = parseErrorBody(status, body);
+  const opts: EsmsErrorOptions = { status, code, detail, requestId: requestId || bodyRequestId };
 
   if (code === "insufficient_balance") return new InsufficientBalanceError(message, opts);
   switch (status) {
     case 401:
       return new AuthenticationError(message, opts);
+    case 402:
+      // Payment required without the insufficient_balance code is still a credit problem.
+      return new InsufficientBalanceError(message, opts);
     case 403:
       return new PermissionError(message, opts);
     case 404:
       return new NotFoundError(message, opts);
     case 400:
+    case 409:
+    case 413:
     case 422:
       return new InvalidRequestError(message, opts);
     case 429:
@@ -120,4 +111,51 @@ export function errorFromResponse(
       if (status >= 500) return new ApiError(message, opts);
       return new EsmsError(message, opts);
   }
+}
+
+/**
+ * Pull code / message / detail out of an error body. The API returns
+ * `{"detail": <string | object | list>, "error": {code, message, request_id}}`;
+ * the rate limiter returns `{"error": "<text>"}`.
+ * @internal
+ */
+export function parseErrorBody(
+  status: number,
+  body: unknown,
+): { code?: string; message: string; detail: unknown; requestId?: string } {
+  const obj = body && typeof body === "object" && !Array.isArray(body)
+    ? (body as Record<string, unknown>)
+    : undefined;
+  const detail: unknown = obj && "detail" in obj ? obj.detail : body;
+  const envelope = obj && obj.error && typeof obj.error === "object"
+    ? (obj.error as Record<string, unknown>)
+    : undefined;
+
+  let code: string | undefined;
+  let message: string | undefined;
+  if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+    const d = detail as Record<string, unknown>;
+    if (typeof d.code === "string") code = d.code;
+    if (typeof d.message === "string") message = d.message;
+  } else if (typeof detail === "string" && detail) {
+    message = detail;
+  } else if (Array.isArray(detail) && detail.length) {
+    // 422 validation errors: [{loc: [...], msg: "..."}]
+    const first = detail[0] as Record<string, unknown>;
+    if (first && typeof first.msg === "string") {
+      const loc = Array.isArray(first.loc) ? first.loc.join(".") : "";
+      message = `Request validation failed: ${loc ? `${loc}: ` : ""}${first.msg}`;
+    }
+  }
+  if (envelope) {
+    if (!code && typeof envelope.code === "string") code = envelope.code;
+    if (!message && typeof envelope.message === "string") message = envelope.message;
+  } else if (obj && typeof obj.error === "string" && !message) {
+    message = obj.error;
+  }
+  const requestId =
+    envelope && typeof envelope.request_id === "string" && envelope.request_id
+      ? envelope.request_id
+      : undefined;
+  return { code, message: message || `HTTP ${status}`, detail, requestId };
 }

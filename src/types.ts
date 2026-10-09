@@ -26,6 +26,14 @@ export interface SendParams {
   scheduleMode?: ScheduleMode;
   /** ISO-8601 UTC time; required when `scheduleMode` is `"scheduled"`. */
   scheduledAt?: string | Date;
+  /** Bill the international-delivery rate (USD) for this send. */
+  international?: boolean;
+  /**
+   * Makes the send safe to retry: a repeat with the same key returns the
+   * original result instead of sending and charging again. A random key is
+   * generated per call when omitted.
+   */
+  idempotencyKey?: string;
 }
 
 export interface SendResult {
@@ -33,6 +41,8 @@ export interface SendResult {
   id: string;
   status: MessageStatus;
   segments: number;
+  /** `GSM7` or `UCS2`. */
+  encoding?: string;
   /** Amount charged, in the account's wallet currency. */
   cost: number;
   costCurrency: string;
@@ -53,11 +63,22 @@ export interface ListParams {
   limit?: number;
   /** Filter by status, e.g. `delivered`. */
   status?: MessageStatus;
+  /** Filter by recipient phone (E.164). */
+  to?: string;
+  /** Filter by bulk batch id (from {@link MessagesResource.sendBulk}). */
+  batchId?: string;
+  /** ISO-8601 lower bound on created time. */
+  dateFrom?: string;
+  /** ISO-8601 upper bound on created time. */
+  dateTo?: string;
+  /** `live` (default for live keys), `test` or `all`. */
+  environment?: "live" | "test" | "all";
 }
 
 export interface MessageSummary {
   id: string;
   phone: string;
+  /** Message body. Truncated to 100 characters in listings; use `get()` for the full text. */
   text: string;
   senderId: string | null;
   route: string | null;
@@ -94,12 +115,47 @@ export interface Message extends Omit<MessageSummary, "currency"> {
   timeline: TimelineEvent[];
 }
 
+export interface BulkRecipient {
+  /** Recipient in international format. */
+  to: string;
+  name?: string;
+  /** Per-recipient template variables. */
+  vars?: Record<string, unknown>;
+}
+
 export interface BulkSendParams {
-  /** IDs of contact lists to send to. */
-  contactListIds: number[];
+  /** IDs of contact lists to send to. Provide this, `recipients`, or both. */
+  contactListIds?: number[];
+  /** Inline recipients (no contact list needed). Not allowed with `scheduleMode: "scheduled"`. */
+  recipients?: BulkRecipient[];
   text: string;
   senderId?: string;
   route?: string;
+  /** `"now"` (default), `"scheduled"` or `"drip"`. */
+  scheduleMode?: "now" | "scheduled" | "drip";
+  /** ISO-8601 UTC time; required when `scheduleMode` is `"scheduled"`. */
+  scheduledAt?: string | Date;
+  /** Messages per minute when `scheduleMode` is `"drip"`. */
+  dripRate?: number;
+  /** Bill the international-delivery rate (USD). */
+  international?: boolean;
+}
+
+export interface BulkSendResult {
+  /** Track it with {@link MessagesResource.getBatch}. */
+  batchId: string;
+  totalRecipients: number;
+  estimatedCost: number;
+  status: string;
+  /** The raw snake_case fields are kept too. */
+  [key: string]: unknown;
+}
+
+export interface RetryResult {
+  id: string;
+  status: MessageStatus;
+  retryCount: number;
+  [key: string]: unknown;
 }
 
 export interface Balance {

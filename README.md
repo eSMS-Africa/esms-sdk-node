@@ -2,7 +2,7 @@
 
 Official Node.js / TypeScript SDK for the [eSMS Africa](https://esmsafrica.io) SMS API.
 
-Send SMS across 14+ African countries, track delivery, schedule messages, and check your balance - with full TypeScript types and no runtime dependencies.
+Send SMS across Africa, track delivery, schedule messages, run managed OTP verification, and check your balance - with full TypeScript types and no runtime dependencies.
 
 ## Install
 
@@ -45,7 +45,19 @@ await esms.messages.schedule({
   text: "Reminder",
   scheduledAt: new Date(Date.now() + 3600_000), // or an ISO-8601 string
 });
+
+// Price a message before sending (no charge, no delivery).
+const quote = await esms.messages.rate({ to: "+256700000000", text: "Hi" });
+
+// Send to many numbers at once (inline recipients and/or contact lists).
+const batch = await esms.messages.sendBulk({
+  recipients: [{ to: "+256700000000" }, { to: "+254711000000" }],
+  text: "Hello from eSMS",
+});
+const summary = await esms.messages.getBatch(batch.batchId);
 ```
+
+`messages.send` attaches a random `Idempotency-Key` to every call so a retried request can never send or charge twice. Pass your own `idempotencyKey` to make retries safe across process restarts too.
 
 ## Delivery status
 
@@ -54,10 +66,13 @@ const msg = await esms.messages.get(res.id);
 console.log(msg.status);   // queued | submitted | delivered | failed | …
 console.log(msg.timeline); // per-event delivery history
 
-// List recent messages
+// List recent messages (filters: status, to, batchId, dateFrom, dateTo, environment)
 const { messages, total } = await esms.messages.list({ limit: 20, status: "delivered" });
 
-// Retry a failed one
+// Status of up to 100 messages in one call
+const { messages: statuses } = await esms.messages.statuses([res.id]);
+
+// Retry a failed one -> { id, status, retryCount }
 await esms.messages.retry(res.id);
 ```
 
@@ -71,6 +86,35 @@ const routes = await esms.routes.list();
 for (const r of routes) {
   console.log(r.code, r.countryName, `${r.currency} ${r.pricePerSegment}/segment`);
 }
+```
+
+## Verify (managed OTP)
+
+```ts
+const v = await esms.verify.start({ to: "+256700000000" }); // or { to, appId }
+// ...user types the code...
+const check = await esms.verify.check({ verificationId: String(v.verification_id), code: "123456" });
+if (check.status === "approved") {
+  // verified
+}
+```
+
+Also available: `verify.get`, `verify.resend`, `verify.cancel`, `verify.list`, and Verify Apps (`listApps`, `createApp`, `getApp`, `updateApp`, `deleteApp`, `appStats`).
+
+## Opt-outs
+
+```ts
+await esms.optOuts.add("+256700000000");
+const optedOut = await esms.optOuts.list();
+await esms.optOuts.remove("+256700000000");
+```
+
+## Webhooks
+
+Delivery-report webhooks are signed with HMAC-SHA256 in the `X-Webhook-Signature` header (`sha256=<hex>`). Verify against the exact raw body:
+
+```ts
+const ok = await Esms.verifyWebhook(rawBody, req.headers["x-webhook-signature"], process.env.ESMS_WEBHOOK_SECRET!);
 ```
 
 ## Errors
@@ -103,7 +147,7 @@ try {
 | `AuthenticationError` | 401 - key missing or invalid |
 | `PermissionError` | 403 - not allowed |
 | `NotFoundError` | 404 - no such message |
-| `InvalidRequestError` | 400 / 422 - bad request |
+| `InvalidRequestError` | 400 / 409 / 413 / 422 - bad request |
 | `InsufficientBalanceError` | 402 - not enough credit (`.balance`, `.cost`, `.currency`) |
 | `RateLimitError` | 429 - slow down |
 | `ApiError` | 5xx - server error |
@@ -119,6 +163,8 @@ new Esms({
   maxRetries: 2,     // transient failures (network, 429, 5xx) with backoff
 });
 ```
+
+Requests authenticate with `Authorization: Bearer <key>`. Non-idempotent POSTs (bulk sends, retries, OTP resends) are only retried on 429, never after a 5xx or network error, so they cannot run twice.
 
 ## License
 

@@ -10,12 +10,17 @@ export interface ClientOptions {
   baseUrl?: string;
   /** Per-request timeout in milliseconds. Default 30000. */
   timeout?: number;
-  /** Retries for transient failures (network, 429, 5xx). Default 2. */
+  /**
+   * Retries for transient failures (network, 429, 5xx). Default 2. Non-idempotent
+   * POSTs are only retried on 5xx/network errors when they carry an
+   * Idempotency-Key (`messages.send` and `verify.start` add one automatically).
+   */
   maxRetries?: number;
   /** Inject a custom fetch (for testing or non-standard runtimes). */
   fetch?: typeof globalThis.fetch;
 }
 
+const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "PUT", "DELETE", "OPTIONS"]);
 const DEFAULT_BASE_URL = "https://sms.esmsafrica.io/api";
 const VERSION = "1.0.0";
 
@@ -78,6 +83,10 @@ export class HttpClient {
       payload = JSON.stringify(opts.body);
     }
 
+    const retrySafe =
+      IDEMPOTENT_METHODS.has(opts.method.toUpperCase()) ||
+      Object.keys(headers).some((h) => h.toLowerCase() === "idempotency-key");
+
     let lastErr: unknown;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       const controller = new AbortController();
@@ -91,14 +100,19 @@ export class HttpClient {
         });
         clearTimeout(timer);
 
-        const requestId = res.headers.get("x-request-id") ?? undefined;
+        const requestId = res.headers.get("x-request-id") || undefined;
         const raw = await res.text();
         const parsed = raw ? safeJson(raw) : undefined;
 
         if (res.ok) return parsed as T;
 
-        // Retry transient server-side statuses.
-        if ((res.status === 429 || res.status >= 500) && attempt < this.maxRetries) {
+        // Retry 429 always (the request was rejected before it ran). Retry 5xx
+        // only when a repeat cannot double-send or double-charge: idempotent
+        // methods, or a POST that carries an Idempotency-Key.
+        if (
+          (res.status === 429 || (res.status >= 500 && retrySafe)) &&
+          attempt < this.maxRetries
+        ) {
           lastErr = errorFromResponse(res.status, parsed, requestId);
           await sleep(backoff(attempt, res.headers.get("retry-after")));
           continue;
@@ -110,9 +124,10 @@ export class HttpClient {
         if (err && typeof err === "object" && err.constructor?.name?.endsWith("Error") && "status" in err) {
           throw err;
         }
-        // Network/timeout: retry, then surface as a connection error.
+        // Network/timeout: the request may already have been processed, so only
+        // retry when that is safe (see above).
         lastErr = err;
-        if (attempt < this.maxRetries) {
+        if (retrySafe && attempt < this.maxRetries) {
           await sleep(backoff(attempt, null));
           continue;
         }
@@ -151,4 +166,13 @@ function backoff(attempt: number, retryAfter: string | null): number {
   // 0.5s, 1s, 2s … with jitter, capped at 10s.
   const base = Math.min(500 * 2 ** attempt, 10_000);
   return base + Math.floor(base * 0.2 * Math.random());
+}
+
+/** A random idempotency key (UUID v4 when available). @internal */
+export function newIdempotencyKey(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  let out = "";
+  for (let i = 0; i < 32; i++) out += Math.floor(Math.random() * 16).toString(16);
+  return `${out.slice(0, 8)}-${out.slice(8, 12)}-4${out.slice(13, 16)}-${out.slice(16, 20)}-${out.slice(20)}`;
 }

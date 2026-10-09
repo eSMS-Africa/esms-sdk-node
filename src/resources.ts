@@ -1,7 +1,9 @@
-import type { HttpClient } from "./http.js";
+import { newIdempotencyKey, type HttpClient } from "./http.js";
 import type {
   Balance,
   BulkSendParams,
+  BulkSendResult,
+  RetryResult,
   ListParams,
   Message,
   MessageList,
@@ -26,21 +28,19 @@ export class MessagesResource {
    * console.log(res.id, res.status);
    */
   async send(params: SendParams): Promise<SendResult> {
-    const scheduledAt =
-      params.scheduledAt instanceof Date
-        ? params.scheduledAt.toISOString()
-        : params.scheduledAt;
     const body = {
       to: params.to,
       text: params.text,
       sender_id: params.senderId,
       route: params.route,
       schedule_mode: params.scheduleMode,
-      scheduled_at: scheduledAt,
+      scheduled_at: isoTime(params.scheduledAt),
+      international: params.international,
     };
     const raw = await this.http.request<Record<string, unknown>>({
       method: "POST",
       path: "/messages/send",
+      headers: { "Idempotency-Key": params.idempotencyKey || newIdempotencyKey() },
       body: prune(body),
     });
     return mapSendResult(raw);
@@ -65,6 +65,11 @@ export class MessagesResource {
         page: params.page,
         limit: params.limit,
         status: params.status,
+        to: params.to,
+        batch_id: params.batchId,
+        date_from: params.dateFrom,
+        date_to: params.dateTo,
+        environment: params.environment,
       },
     });
     return {
@@ -84,26 +89,99 @@ export class MessagesResource {
     return mapMessage(raw);
   }
 
-  /** Retry a failed message. */
-  async retry(messageId: string): Promise<SendResult> {
+  /**
+   * Retry a failed, undelivered, rejected, expired or unknown message.
+   * Returns `{ id, status, retryCount }`.
+   */
+  async retry(messageId: string): Promise<RetryResult> {
     const raw = await this.http.request<Record<string, unknown>>({
       method: "POST",
       path: `/messages/${encodeURIComponent(messageId)}/retry`,
     });
-    return mapSendResult(raw);
+    return {
+      ...raw,
+      id: String(raw.id),
+      status: String(raw.status ?? ""),
+      retryCount: Number(raw.retry_count ?? 0),
+    };
   }
 
-  /** Send one message to every contact in the given contact lists. */
-  async sendBulk(params: BulkSendParams): Promise<Record<string, unknown>> {
-    return this.http.request<Record<string, unknown>>({
+  /**
+   * Send one message to many recipients: contact lists and/or an inline
+   * `recipients` array. Track the result with {@link getBatch}.
+   */
+  async sendBulk(params: BulkSendParams): Promise<BulkSendResult> {
+    const raw = await this.http.request<Record<string, unknown>>({
       method: "POST",
       path: "/messages/send-bulk",
       body: prune({
         contact_list_ids: params.contactListIds,
+        recipients: params.recipients,
         text: params.text,
         sender_id: params.senderId,
         route: params.route,
+        schedule_mode: params.scheduleMode,
+        scheduled_at: isoTime(params.scheduledAt),
+        drip_rate: params.dripRate,
+        international: params.international,
       }),
+    });
+    return {
+      ...raw,
+      batchId: String(raw.batch_id ?? ""),
+      totalRecipients: Number(raw.total_recipients ?? 0),
+      estimatedCost: Number(raw.estimated_cost ?? 0),
+      status: String(raw.status ?? ""),
+    };
+  }
+
+  /** Aggregate status of a bulk batch plus a page of its messages (raw API JSON). */
+  async getBatch(
+    batchId: string,
+    params: { page?: number; limit?: number } = {},
+  ): Promise<Record<string, unknown>> {
+    return this.http.request<Record<string, unknown>>({
+      method: "GET",
+      path: `/messages/batch/${encodeURIComponent(batchId)}`,
+      query: { page: params.page, limit: params.limit },
+    });
+  }
+
+  /** Delivery status for up to 100 messages in one call. Returns `{ messages: [...] }`. */
+  async statuses(messageIds: string[]): Promise<Record<string, unknown>> {
+    return this.http.request<Record<string, unknown>>({
+      method: "GET",
+      path: "/messages/status",
+      query: { ids: messageIds.join(",") },
+    });
+  }
+
+  /**
+   * Price a message before sending - no charge, no delivery. Returns encoding,
+   * segments and per-recipient cost (raw API JSON).
+   */
+  async rate(params: {
+    to: string | string[];
+    text: string;
+    route?: string;
+    international?: boolean;
+  }): Promise<Record<string, unknown>> {
+    return this.http.request<Record<string, unknown>>({
+      method: "POST",
+      path: "/messages/rate",
+      body: prune({ to: params.to, text: params.text, route: params.route, international: params.international }),
+    });
+  }
+
+  /**
+   * Validate numbers offline (format, line type, carrier) - no charge.
+   * A single number returns one result; an array returns `{ count, valid, results, ... }`.
+   */
+  async validate(phone: string | string[]): Promise<Record<string, unknown>> {
+    return this.http.request<Record<string, unknown>>({
+      method: "POST",
+      path: "/messages/validate",
+      body: { phone },
     });
   }
 }
@@ -154,7 +232,10 @@ export class RoutesResource {
 export class VerifyResource {
   constructor(private readonly http: HttpClient) {}
 
-  /** Send a verification code. Pass `appId` to use a Verify App; `idempotencyKey` makes retries safe. */
+  /**
+   * Send a verification code. Pass `appId` to use a Verify App. `idempotencyKey`
+   * makes retries safe; a random one is generated per call when omitted.
+   */
   async start(params: {
     to: string;
     appId?: string;
@@ -167,7 +248,8 @@ export class VerifyResource {
     return this.http.request<Record<string, unknown>>({
       method: "POST",
       path: "/verify/start",
-      headers: params.idempotencyKey ? { "Idempotency-Key": params.idempotencyKey } : undefined,
+      // Always send a key so a retried start can never text a second code.
+      headers: { "Idempotency-Key": params.idempotencyKey || newIdempotencyKey() },
       body: prune({
         to: params.to,
         app_id: params.appId,
@@ -194,26 +276,26 @@ export class VerifyResource {
 
   /** Fetch a verification's status without consuming an attempt. */
   async get(verificationId: string): Promise<Record<string, unknown>> {
-    return this.http.request({ method: "GET", path: `/verify/${verificationId}` });
+    return this.http.request({ method: "GET", path: `/verify/${encodeURIComponent(verificationId)}` });
   }
 
   /** Send a fresh code for the same verification. */
   async resend(verificationId: string): Promise<Record<string, unknown>> {
-    return this.http.request({ method: "POST", path: `/verify/${verificationId}/resend` });
+    return this.http.request({ method: "POST", path: `/verify/${encodeURIComponent(verificationId)}/resend` });
   }
 
   /** Void an in-flight verification. */
   async cancel(verificationId: string): Promise<Record<string, unknown>> {
-    return this.http.request({ method: "POST", path: `/verify/${verificationId}/cancel` });
+    return this.http.request({ method: "POST", path: `/verify/${encodeURIComponent(verificationId)}/cancel` });
   }
 
   /** List your verifications (most recent first). */
   async list(params: { status?: string; appId?: string; to?: string; page?: number; limit?: number } = {}): Promise<Record<string, unknown>> {
-    const q = new URLSearchParams();
-    const map: Record<string, unknown> = { status: params.status, app_id: params.appId, to: params.to, page: params.page, limit: params.limit };
-    for (const [k, v] of Object.entries(map)) if (v !== undefined) q.set(k, String(v));
-    const qs = q.toString();
-    return this.http.request({ method: "GET", path: `/verify${qs ? `?${qs}` : ""}` });
+    return this.http.request({
+      method: "GET",
+      path: "/verify",
+      query: { status: params.status, app_id: params.appId, to: params.to, page: params.page, limit: params.limit },
+    });
   }
 
   // ---- Verify Apps ----
@@ -227,19 +309,23 @@ export class VerifyResource {
   }
   /** Fetch one Verify App. */
   async getApp(id: string): Promise<Record<string, unknown>> {
-    return this.http.request({ method: "GET", path: `/verify/apps/${id}` });
+    return this.http.request({ method: "GET", path: `/verify/apps/${encodeURIComponent(id)}` });
   }
   /** Update a Verify App (full replace - send all fields; name is required). */
   async updateApp(id: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return this.http.request({ method: "PATCH", path: `/verify/apps/${id}`, body: prune(body) });
+    return this.http.request({ method: "PATCH", path: `/verify/apps/${encodeURIComponent(id)}`, body: prune(body) });
   }
-  /** Delete a Verify App. */
-  async deleteApp(id: string): Promise<Record<string, unknown>> {
-    return this.http.request({ method: "DELETE", path: `/verify/apps/${id}` });
+  /** Delete a Verify App (the API answers 204 No Content). */
+  async deleteApp(id: string): Promise<void> {
+    await this.http.request({ method: "DELETE", path: `/verify/apps/${encodeURIComponent(id)}` });
   }
   /** Per-app verification stats. */
   async appStats(id: string, days = 30): Promise<Record<string, unknown>> {
-    return this.http.request({ method: "GET", path: `/verify/apps/${id}/stats?days=${days}` });
+    return this.http.request({
+      method: "GET",
+      path: `/verify/apps/${encodeURIComponent(id)}/stats`,
+      query: { days },
+    });
   }
 }
 
@@ -247,9 +333,13 @@ export class VerifyResource {
 export class OptOutsResource {
   constructor(private readonly http: HttpClient) {}
 
-  /** List numbers that have opted out of your messages. */
-  async list(): Promise<Record<string, unknown>[]> {
-    const raw = await this.http.request<Record<string, unknown>>({ method: "GET", path: "/opt-outs" });
+  /** List numbers that have opted out of your messages (newest first, default 200, max 1000). */
+  async list(params: { limit?: number } = {}): Promise<Record<string, unknown>[]> {
+    const raw = await this.http.request<Record<string, unknown>>({
+      method: "GET",
+      path: "/opt-outs",
+      query: { limit: params.limit },
+    });
     return (raw?.opt_outs as Record<string, unknown>[]) ?? [];
   }
 
@@ -275,12 +365,17 @@ function prune<T extends Record<string, unknown>>(obj: T): Partial<T> {
   return out as Partial<T>;
 }
 
+function isoTime(v: string | Date | undefined): string | undefined {
+  return v instanceof Date ? v.toISOString() : v;
+}
+
 function mapSendResult(r: Record<string, unknown>): SendResult {
   return {
     ...r,
     id: String(r.id),
     status: String(r.status),
     segments: Number(r.segments ?? 0),
+    encoding: r.encoding !== undefined ? String(r.encoding) : undefined,
     cost: Number(r.cost ?? 0),
     costCurrency: String(r.cost_currency ?? ""),
     routeCost: Number(r.route_cost ?? 0),

@@ -15,7 +15,7 @@ export * from "./errors.js";
  * The eSMS Africa SMS client.
  *
  * @example
- * import { Esms } from "@esms/sms";
+ * import { Esms } from "esms-sms";
  *
  * const esms = new Esms({ apiKey: process.env.ESMS_API_KEY! });
  * const res = await esms.messages.send({ to: "+256700000000", text: "Hi!" });
