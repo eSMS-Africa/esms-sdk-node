@@ -28,6 +28,17 @@ export interface SendParams {
   scheduledAt?: string | Date;
   /** Bill the international-delivery rate (USD) for this send. */
   international?: boolean;
+  /** Flash SMS (message class 0): shown on screen, not stored. Same price. */
+  flash?: boolean;
+  /** Minutes (1-4320) the network keeps retrying before the message expires. */
+  validityPeriod?: number;
+  /** 0 normal (default), 1 high, 2 higher, 3 highest. */
+  priority?: number;
+  /**
+   * Raw binary SMS (vCard, WAP Push, ...) instead of `text` (pass `text: ""`).
+   * Hex strings; UDH + data must fit one SMS. Billed as one segment.
+   */
+  binary?: { data: string; udh?: string; dataCoding?: number };
   /**
    * Makes the send safe to retry: a repeat with the same key returns the
    * original result instead of sending and charging again. A random key is
@@ -139,6 +150,17 @@ export interface BulkSendParams {
   dripRate?: number;
   /** Bill the international-delivery rate (USD). */
   international?: boolean;
+  /** Flash SMS (message class 0): shown on screen, not stored. Same price. */
+  flash?: boolean;
+  /** Minutes (1-4320) the network keeps retrying before the message expires. */
+  validityPeriod?: number;
+  /** 0 normal (default), 1 high, 2 higher, 3 highest. */
+  priority?: number;
+  /**
+   * Drop (uncharged) recipients in countries not available yet or with invalid
+   * numbers, instead of rejecting the whole request.
+   */
+  skipUnavailable?: boolean;
 }
 
 export interface BulkSendResult {
@@ -172,6 +194,11 @@ export interface Route {
   countryName: string;
   currency: string;
   pricePerSegment: number;
-  senderIdDefault: string;
+  /** The route's default sender ID, or `null` when it has none. */
+  senderIdDefault: string | null;
   isActive: boolean;
+  /** International dialling code, e.g. `+256`. */
+  dialCode?: string;
+  /** Region of Africa, e.g. `East Africa`. */
+  region?: string;
 }

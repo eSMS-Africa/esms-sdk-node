@@ -59,6 +59,8 @@ const summary = await esms.messages.getBatch(batch.batchId);
 
 `messages.send` attaches a random `Idempotency-Key` to every call so a retried request can never send or charge twice. Pass your own `idempotencyKey` to make retries safe across process restarts too.
 
+Advanced options: `flash: true` (class-0 SMS shown on screen), `validityPeriod` (minutes, 1-4320), `priority` (0-3) and `binary: { data, udh?, dataCoding? }` (hex payload, pass `text: ""`). `sendBulk` also takes `flash`, `validityPeriod`, `priority` and `skipUnavailable: true` (drop unreachable recipients, uncharged, instead of rejecting the whole batch).
+
 ## Delivery status
 
 ```ts

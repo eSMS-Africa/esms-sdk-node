@@ -36,6 +36,12 @@ export class MessagesResource {
       schedule_mode: params.scheduleMode,
       scheduled_at: isoTime(params.scheduledAt),
       international: params.international,
+      flash: params.flash,
+      validity_period: params.validityPeriod,
+      priority: params.priority,
+      binary: params.binary
+        ? prune({ data: params.binary.data, udh: params.binary.udh, data_coding: params.binary.dataCoding })
+        : undefined,
     };
     const raw = await this.http.request<Record<string, unknown>>({
       method: "POST",
@@ -124,6 +130,10 @@ export class MessagesResource {
         scheduled_at: isoTime(params.scheduledAt),
         drip_rate: params.dripRate,
         international: params.international,
+        flash: params.flash,
+        validity_period: params.validityPeriod,
+        priority: params.priority,
+        skip_unavailable: params.skipUnavailable,
       }),
     });
     return {
@@ -222,7 +232,9 @@ export class RoutesResource {
       countryName: String(r.country_name),
       currency: String(r.currency),
       pricePerSegment: Number(r.price_per_segment),
-      senderIdDefault: String(r.sender_id_default),
+      senderIdDefault: r.sender_id_default == null ? null : String(r.sender_id_default),
+      dialCode: r.dial_code == null ? undefined : String(r.dial_code),
+      region: r.region == null ? undefined : String(r.region),
       isActive: Boolean(r.is_active),
     }));
   }

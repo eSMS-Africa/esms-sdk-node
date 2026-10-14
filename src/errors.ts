@@ -67,8 +67,19 @@ export class InsufficientBalanceError extends InvalidRequestError {
     // Some paths report `available`/`required` instead of `balance`/`cost`.
     this.balance = num(d.balance, d.available);
     this.cost = num(d.cost, d.required);
-    this.currency = typeof d.currency === "string" ? d.currency : undefined;
+    this.currency = typeof d.currency === "string" ? d.currency : currencyFromMessage(d.message ?? message);
   }
+}
+
+/**
+ * The API states the wallet currency only inside the message
+ * ("Required KES 5, available KES 1"), so recover it from there.
+ * @internal
+ */
+export function currencyFromMessage(message: unknown): string | undefined {
+  if (typeof message !== "string") return undefined;
+  const m = /\b(?:Required|available)\s+([A-Z]{3})\b/.exec(message);
+  return m ? m[1] : undefined;
 }
 
 /** 429 - too many requests; back off and retry later. */

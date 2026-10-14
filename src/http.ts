@@ -1,5 +1,6 @@
 import {
   EsmsConnectionError,
+  EsmsError,
   errorFromResponse,
 } from "./errors.js";
 
@@ -22,7 +23,7 @@ export interface ClientOptions {
 
 const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "PUT", "DELETE", "OPTIONS"]);
 const DEFAULT_BASE_URL = "https://sms.esmsafrica.io/api";
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 
 interface RequestOptions {
   method: string;
@@ -98,13 +99,25 @@ export class HttpClient {
           body: payload,
           signal: controller.signal,
         });
-        clearTimeout(timer);
-
         const requestId = res.headers.get("x-request-id") || undefined;
+        // Keep the timeout armed while the body streams in: a server that sends
+        // headers and then stalls must still trip the deadline.
         const raw = await res.text();
+        clearTimeout(timer);
         const parsed = raw ? safeJson(raw) : undefined;
 
-        if (res.ok) return parsed as T;
+        if (res.ok) {
+          if (typeof parsed === "string") {
+            // A 2xx that is not JSON (e.g. an HTML page from a proxy) would
+            // otherwise be mapped into a result full of undefined fields.
+            throw new EsmsError(`Unexpected non-JSON response (HTTP ${res.status})`, {
+              status: res.status,
+              detail: parsed.slice(0, 500),
+              requestId,
+            });
+          }
+          return parsed as T;
+        }
 
         // Retry 429 always (the request was rejected before it ran). Retry 5xx
         // only when a repeat cannot double-send or double-charge: idempotent
@@ -121,7 +134,9 @@ export class HttpClient {
       } catch (err) {
         clearTimeout(timer);
         // A mapped API error: rethrow immediately (already handled retry above).
-        if (err && typeof err === "object" && err.constructor?.name?.endsWith("Error") && "status" in err) {
+        // instanceof, not the class name: bundlers that minify class names would
+        // otherwise turn a 4xx into a retried "connection" error.
+        if (err instanceof EsmsError) {
           throw err;
         }
         // Network/timeout: the request may already have been processed, so only

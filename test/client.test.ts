@@ -233,4 +233,87 @@ describe("Esms", () => {
     const esms = new Esms({ apiKey: "esms_test_abc", fetch: fetchImpl, maxRetries: 0 });
     await expect(esms.verify.deleteApp("app_1")).resolves.toBeUndefined();
   });
+  it("recovers the currency of a live 402 (the API only states it in the message)", async () => {
+    const esms = clientWith(() => ({
+      status: 402,
+      body: {
+        error: { code: "insufficient_balance", message: "x", request_id: "r" },
+        detail: {
+          code: "insufficient_balance",
+          message: "Insufficient balance. Required KES 5.0, available KES 1.0",
+          required: 5,
+          available: 1,
+        },
+      },
+    }));
+    const err = await esms.messages.send({ to: "+254711000000", text: "x" }).catch((e) => e);
+    expect(err).toBeInstanceOf(InsufficientBalanceError);
+    expect(err.currency).toBe("KES");
+    expect(err.balance).toBe(1);
+    expect(err.cost).toBe(5);
+  });
+
+  it("does not retry a 4xx even when the error class name is minified", async () => {
+    // Simulate a minifier renaming classes: the old name-based check missed this
+    // and re-sent a 400 as if it were a network failure.
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls++;
+      return new Response(JSON.stringify({ detail: "bad" }), { status: 400 });
+    }) as unknown as typeof fetch;
+    const esms = new Esms({ apiKey: "esms_test_abc", fetch: fetchImpl, maxRetries: 2 });
+    const orig = Object.getOwnPropertyDescriptor(InvalidRequestError, "name");
+    Object.defineProperty(InvalidRequestError, "name", { value: "q", configurable: true });
+    try {
+      await expect(esms.balance.get()).rejects.toBeInstanceOf(InvalidRequestError);
+      expect(calls).toBe(1);
+    } finally {
+      if (orig) Object.defineProperty(InvalidRequestError, "name", orig);
+    }
+  });
+
+  it("times out a response whose body stalls after the headers", async () => {
+    const fetchImpl = (async (_u: string, init: RequestInit) => {
+      const signal = init.signal as AbortSignal;
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        text: () =>
+          new Promise<string>((_resolve, reject) => {
+            signal.addEventListener("abort", () => {
+              const e = new Error("aborted");
+              e.name = "AbortError";
+              reject(e);
+            });
+          }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const esms = new Esms({ apiKey: "esms_test_abc", fetch: fetchImpl, maxRetries: 0, timeout: 50 });
+    await expect(esms.balance.get()).rejects.toThrow(/timed out/);
+  });
+
+  it("rejects a non-JSON 2xx instead of returning empty fields", async () => {
+    const fetchImpl = (async () => new Response("<html>gateway</html>", { status: 200 })) as unknown as typeof fetch;
+    const esms = new Esms({ apiKey: "esms_test_abc", fetch: fetchImpl, maxRetries: 0 });
+    await expect(esms.balance.get()).rejects.toThrow(/non-JSON/);
+  });
+
+  it("keeps a null default sender as null and sends the advanced options", async () => {
+    let body: Record<string, unknown> = {};
+    const esms = clientWith((url, init) => {
+      if (url.endsWith("/routes"))
+        return { status: 200, body: [{ code: "ESMS_UG", name: "Uganda", country_code: "UG", country_name: "Uganda",
+          currency: "UGX", price_per_segment: 30, sender_id_default: null, is_active: true, dial_code: "+256", region: "East Africa" }] };
+      body = JSON.parse(String(init.body));
+      return { status: 200, body: { id: "m", status: "submitted" } };
+    });
+    const [r] = await esms.routes.list();
+    expect(r.senderIdDefault).toBeNull();
+    expect(r.dialCode).toBe("+256");
+    await esms.messages.send({ to: "+256700000000", text: "x", flash: true, validityPeriod: 60, priority: 1 });
+    expect(body).toMatchObject({ flash: true, validity_period: 60, priority: 1 });
+    await esms.messages.sendBulk({ recipients: [{ to: "+256700000000" }], text: "x", skipUnavailable: true });
+    expect(body).toMatchObject({ skip_unavailable: true });
+  });
 });
