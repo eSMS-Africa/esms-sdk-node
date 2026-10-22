@@ -23,7 +23,7 @@ export interface ClientOptions {
 
 const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "PUT", "DELETE", "OPTIONS"]);
 const DEFAULT_BASE_URL = "https://sms.esmsafrica.io/api";
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 
 interface RequestOptions {
   method: string;
@@ -31,6 +31,8 @@ interface RequestOptions {
   query?: Record<string, string | number | undefined>;
   headers?: Record<string, string>;
   body?: unknown;
+  /** Multipart body (file uploads). Takes precedence over `body`. */
+  form?: FormData;
 }
 
 /**
@@ -78,8 +80,10 @@ export class HttpClient {
       "User-Agent": `esms-node/${VERSION}`,
       ...(opts.headers ?? {}),
     };
-    let payload: string | undefined;
-    if (opts.body !== undefined) {
+    let payload: string | FormData | undefined;
+    if (opts.form !== undefined) {
+      payload = opts.form; // fetch sets the multipart boundary itself
+    } else if (opts.body !== undefined) {
       headers["Content-Type"] = "application/json";
       payload = JSON.stringify(opts.body);
     }

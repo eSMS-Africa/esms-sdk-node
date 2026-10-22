@@ -6,10 +6,19 @@ import {
   VerifyResource,
   OptOutsResource,
 } from "./resources.js";
+import {
+  CampaignsResource,
+  ImportsResource,
+  JobsResource,
+  ContactsResource,
+  GroupsResource,
+  TemplatesResource,
+} from "./v2.js";
 
 export type { ClientOptions } from "./http.js";
 export * from "./types.js";
 export * from "./errors.js";
+export type { SendBatchParams, SendBatchResult, BatchRecipient, ScheduleParams } from "./v2.js";
 
 /**
  * The eSMS Africa SMS client.
@@ -31,6 +40,18 @@ export class Esms {
   readonly verify: VerifyResource;
   /** Manage the opt-out (STOP / DND) list. */
   readonly optOuts: OptOutsResource;
+  /** Campaigns: personalised bulk with schedule, approvals and reports. */
+  readonly campaigns: CampaignsResource;
+  /** Recipient imports (CSV / Excel / paste / Google Sheets). */
+  readonly imports: ImportsResource;
+  /** Background job progress. */
+  readonly jobs: JobsResource;
+  /** Contact book (by phone). */
+  readonly contacts: ContactsResource;
+  /** Contact groups. */
+  readonly groups: GroupsResource;
+  /** Message templates. */
+  readonly templates: TemplatesResource;
 
   private readonly http: HttpClient;
 
@@ -47,6 +68,12 @@ export class Esms {
     this.routes = new RoutesResource(this.http);
     this.verify = new VerifyResource(this.http);
     this.optOuts = new OptOutsResource(this.http);
+    this.campaigns = new CampaignsResource(this.http);
+    this.imports = new ImportsResource(this.http);
+    this.jobs = new JobsResource(this.http);
+    this.contacts = new ContactsResource(this.http);
+    this.groups = new GroupsResource(this.http);
+    this.templates = new TemplatesResource(this.http);
   }
 
   /** The base URL requests are sent to. */

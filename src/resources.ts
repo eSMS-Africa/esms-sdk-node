@@ -1,4 +1,5 @@
 import { newIdempotencyKey, type HttpClient } from "./http.js";
+import { sendBatch, type SendBatchParams, type SendBatchResult } from "./v2.js";
 import type {
   Balance,
   BulkSendParams,
@@ -168,6 +169,21 @@ export class MessagesResource {
       method: "POST",
       path: `/messages/batch/${encodeURIComponent(batchId)}/cancel`,
     });
+  }
+
+  /**
+   * Personalised bulk send (durable, resumable): a template with per-recipient
+   * `vars`, or full `messages`. An Idempotency-Key is generated when you do not
+   * pass one, so a retry never sends twice. Track with {@link getBatch}.
+   *
+   * @example
+   * const r = await esms.messages.sendBatch({
+   *   template: "Hi {first_name|there}, your balance is UGX {balance}.",
+   *   recipients: [{ to: "+256772123456", name: "Ada", vars: { balance: "1,500" } }],
+   * });
+   */
+  async sendBatch(params: SendBatchParams): Promise<SendBatchResult> {
+    return sendBatch(this.http, params);
   }
 
   /** Aggregate status of a bulk batch plus a page of its messages (raw API JSON). */

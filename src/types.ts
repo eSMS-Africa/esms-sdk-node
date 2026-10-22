@@ -204,3 +204,27 @@ export interface Route {
   /** Region of Africa, e.g. `East Africa`. */
   region?: string;
 }
+
+/** Raw API JSON (snake_case keys). */
+export type Json = Record<string, any>;
+
+/** Signed `campaign.completed` webhook body (verify with `Esms.verifyWebhook`). */
+export interface CampaignEvent {
+  event: "campaign.completed" | string;
+  campaign_id: number;
+  batch_id: string | null;
+  name: string;
+  status: string;
+  environment: "live" | "test";
+  livemode: boolean;
+  recipients: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  spent: number;
+  currency: string | null;
+  tags: string[];
+  started_at: string | null;
+  completed_at: string | null;
+  report_url: string;
+}

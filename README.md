@@ -61,6 +61,41 @@ const summary = await esms.messages.getBatch(batch.batchId);
 
 Advanced options: `flash: true` (class-0 SMS shown on screen), `validityPeriod` (minutes, 1-4320), `priority` (0-3) and `binary: { data, udh?, dataCoding? }` (hex payload, pass `text: ""`). `sendBulk` also takes `flash`, `validityPeriod`, `priority` and `skipUnavailable: true` (drop unreachable recipients, uncharged, instead of rejecting the whole batch).
 
+## Personalised bulk + campaigns
+
+Requires SDK 1.2.0 or later.
+
+```ts
+// One call: a template with per-recipient merge fields. Invalid, duplicate and
+// opted-out numbers come back in `rejected` and are never charged.
+const batch = await esms.messages.sendBatch({
+  template: "Hi {first_name|there}, your balance is UGX {balance}. Pay by {due_date}.",
+  recipients: [
+    { to: "+256772123456", name: "Ada Obi", vars: { balance: "1,500", due_date: "1 Nov" } },
+    { to: "0701234567", vars: { balance: "200", due_date: "1 Nov" } },
+  ],
+  defaultCountry: "UG",          // for local numbers like 0701...
+  senderId: "ACMEBANK",
+  schedule: { mode: "scheduled", at: "2026-11-01T09:00", timezone: "Africa/Kampala" },
+});
+const status = await esms.messages.getBatch(batch.batch_id);
+
+// Big lists: upload a CSV / Excel file, map columns, then run a campaign.
+import { readFile } from "node:fs/promises";
+const imp = await esms.imports.upload(await readFile("debtors.xlsx"), { filename: "debtors.xlsx", defaultCountry: "UG" });
+const { job_id } = await esms.imports.process(imp.id, { mapping: { phone: "Mobile", name: "Name", fields: { "Amount Due": "amount" } } });
+// poll esms.jobs.get(job_id) until status is "done"
+const c = await esms.campaigns.create({ name: "October dues", text: "Hi {first_name}, you owe {amount|0}.",
+  audience: [{ type: "import", id: imp.id }], idempotencyKey: "october-dues" });
+await esms.campaigns.prepare(c.id);          // exact cost per country + checks
+const { review } = await esms.campaigns.review(c.id);
+if (review.can_launch) await esms.campaigns.launch(c.id);
+const report = await esms.campaigns.report(c.id);
+```
+
+Also: `campaigns.pause/resume/cancel/retryFailed/duplicate/recipients/runs`, `contacts`, `groups`, `templates` (with `starterPack()` and `useStarter(key)`).
+The signed `campaign.completed` webhook uses the same `Esms.verifyWebhook` check.
+
 ## Delivery status
 
 ```ts
