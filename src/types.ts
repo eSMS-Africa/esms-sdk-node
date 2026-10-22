@@ -161,6 +161,8 @@ export interface BulkSendParams {
    * numbers, instead of rejecting the whole request.
    */
   skipUnavailable?: boolean;
+  /** Idempotency-Key for safe retries (one is generated when omitted). */
+  idempotencyKey?: string;
 }
 
 export interface BulkSendResult {

@@ -120,6 +120,9 @@ export class MessagesResource {
     const raw = await this.http.request<Record<string, unknown>>({
       method: "POST",
       path: "/messages/send-bulk",
+      // Reserved before anything is charged: a retried call returns the
+      // original batch instead of sending (and billing) it twice.
+      headers: { "Idempotency-Key": params.idempotencyKey || newIdempotencyKey() },
       body: prune({
         contact_list_ids: params.contactListIds,
         recipients: params.recipients,
@@ -143,6 +146,28 @@ export class MessagesResource {
       estimatedCost: Number(raw.estimated_cost ?? 0),
       status: String(raw.status ?? ""),
     };
+  }
+
+  /**
+   * Cancel a scheduled message before it is sent; the charge is refunded.
+   * Returns `{ id, status: "cancelled", refund }` (raw API JSON).
+   */
+  async cancel(messageId: string): Promise<Record<string, unknown>> {
+    return this.http.request<Record<string, unknown>>({
+      method: "POST",
+      path: `/messages/${encodeURIComponent(messageId)}/cancel`,
+    });
+  }
+
+  /**
+   * Cancel a scheduled bulk batch before its send time; the upfront charge is
+   * refunded. Returns `{ batch_id, status: "cancelled", refund }`.
+   */
+  async cancelBatch(batchId: string): Promise<Record<string, unknown>> {
+    return this.http.request<Record<string, unknown>>({
+      method: "POST",
+      path: `/messages/batch/${encodeURIComponent(batchId)}/cancel`,
+    });
   }
 
   /** Aggregate status of a bulk batch plus a page of its messages (raw API JSON). */

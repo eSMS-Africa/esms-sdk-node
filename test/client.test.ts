@@ -316,4 +316,23 @@ describe("Esms", () => {
     await esms.messages.sendBulk({ recipients: [{ to: "+256700000000" }], text: "x", skipUnavailable: true });
     expect(body).toMatchObject({ skip_unavailable: true });
   });
+
+  it("sends an Idempotency-Key on bulk and hits the cancel endpoints", async () => {
+    const seen: { url: string; key: string | null; method: string }[] = [];
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      const h = new Headers(init.headers);
+      seen.push({ url: String(url), key: h.get("Idempotency-Key"), method: String(init.method) });
+      return new Response(JSON.stringify({ batch_id: "b1", total_recipients: 1, status: "cancelled" }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+    const esms = new Esms({ apiKey: "esms_test_abc", fetch: fetchImpl, maxRetries: 0 });
+    await esms.messages.sendBulk({ recipients: [{ to: "+256700000000" }], text: "x", idempotencyKey: "k-1" });
+    await esms.messages.cancel("m1");
+    await esms.messages.cancelBatch("b1");
+    expect(seen[0].key).toBe("k-1");
+    expect(seen[1].url).toContain("/messages/m1/cancel");
+    expect(seen[2].url).toContain("/messages/batch/b1/cancel");
+    expect(seen[2].method).toBe("POST");
+  });
 });
